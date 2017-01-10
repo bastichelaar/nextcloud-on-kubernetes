@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nextcloud
+  labels:
+    name: nextcloud
+spec:
+  containers:
+    - name: nextcloud
+      image: 360ict/nextcloud:11
+      env:
+        - name: TZ
+          value: Europe/Amsterdam
+        - name: DEBUG
+          value: "false"
+
+        - name: NEXTCLOUD_URL
+          value: http://cloud.example.com
+
+        - name: NEXTCLOUD_ADMIN_USER
+          value: admin
+        - name: NEXTCLOUD_ADMIN_PASSWORD
+          value: password
+
+        - name: NEXTCLOUD_UPLOAD_MAX_FILESIZE
+          value: 4G
+        - name: NEXTCLOUD_MAX_FILE_UPLOADS
+          value: "20"
+
+        - name: DB_TYPE
+          value: mysql
+        - name: DB_HOST
+          value: 127.0.0.1
+        - name: DB_PORT
+          value: "3306"
+        - name: DB_USER
+          value: nextcloud
+        - name: DB_PASSWORD
+          value: password
+        - name: DB_NAME
+          value: nextcloud
+        - name: ADMIN_USER
+          value: admin
+        - name: ADMIN_PASSWORD
+          value: password
+      ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+      volumeMounts:
+        - mountPath: /var/lib/nextcloud
+          name: data
+      livenessProbe:
+        tcpSocket:
+          port: 80
+        initialDelaySeconds: 5
+        timeoutSeconds: 1
+    - name: mariadb
+      image: mariadb
+      env:
+      - name: MYSQL_ROOT_PASSWORD
+        value: root
+      - name: MYSQL_DATABASE
+        value: nextcloud
+      - name: MYSQL_USER
+        value: nextcloud
+      - name: MYSQL_PASSWORD
+        value: password
+      volumeMounts:
+      - mountPath: /var/lib/mysql
+        name: mariadb
+      ports:
+        - name: mariadb
+          containerPort: 3306
+          protocol: TCP
+
+  volumes:
+    - name: data
+      emptyDir: {}
+    - name: mariadb
+      emptyDir: {}
