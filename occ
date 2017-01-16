@@ -1,0 +1,2 @@
+#!/bin/sh
+sudo -E -u www-data /var/www/html/occ $@

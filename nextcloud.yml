@@ -7,7 +7,7 @@ metadata:
 spec:
   containers:
     - name: nextcloud
-      image: 360ict/nextcloud:11
+      image: bastichelaar/nextcloud:11
       env:
         - name: TZ
           value: Europe/Amsterdam
@@ -73,9 +73,21 @@ spec:
         - name: mariadb
           containerPort: 3306
           protocol: TCP
-
+    - name: redis
+      image: redis
+      ports:
+        - name: redis
+          containerPort: 6379
+          protocol: TCP
+    - name: cron
+      image: bastichelaar/cron:latest
+      env:
+      - name: CRON_ENTRY
+        value: "* * * * */15 curl http://localhost/cron.php"
   volumes:
     - name: data
+      emptyDir: {}
+    - name: config
       emptyDir: {}
     - name: mariadb
       emptyDir: {}

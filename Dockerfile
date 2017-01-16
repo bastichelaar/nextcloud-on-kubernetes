@@ -1,54 +1,94 @@
-FROM php:7-apache
+FROM ubuntu:16.04
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apache2 \
+    libapache2-mod-php7.0
+
+RUN apt-get install -y --no-install-recommends \
+  php7.0-gd \
+  php7.0-json \
+  php7.0-mysql \
+  php7.0-curl \
+  php7.0-mbstring \
+  php7.0-intl \
+  php7.0-mcrypt \
+  php-imagick \
+  php7.0-xml \
+  php7.0-zip \
+  php7.0-ldap \
+  php-redis \
+  php-apcu \
+  php-smbclient \
+  php-pear
+
+
+RUN apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  libedit2 \
+  libsqlite3-0 \
+  libxml2 \
+  xz-utils \
   bzip2 \
-  libcurl4-openssl-dev \
-  libfreetype6-dev \
-  libicu-dev \
-  libjpeg-dev \
-  libldap2-dev \
-  libmcrypt-dev \
-  libmemcached-dev \
-  libpng12-dev \
-  libpq-dev \
-  libxml2-dev \
-  git \
-  && rm -rf /var/lib/apt/lists/*
+  sudo
 
+RUN rm -r /var/lib/apt/lists/*
 
-# set recommended PHP.ini settings
-# see https://secure.php.net/manual/en/opcache.installation.php
+ENV APACHE_CONFDIR /etc/apache2
+ENV APACHE_ENVVARS $APACHE_CONFDIR/envvars
+
+RUN set -ex \
+	\
+# generically convert lines like
+#   export APACHE_RUN_USER=www-data
+# into
+#   : ${APACHE_RUN_USER:=www-data}
+#   export APACHE_RUN_USER
+# so that they can be overridden at runtime ("-e APACHE_RUN_USER=...")
+	&& sed -ri 's/^export ([^=]+)=(.*)$/: ${\1:=\2}\nexport \1/' "$APACHE_ENVVARS" \
+	\
+# setup directories and permissions
+	&& . "$APACHE_ENVVARS" \
+	&& for dir in \
+		"$APACHE_LOCK_DIR" \
+		"$APACHE_RUN_DIR" \
+		"$APACHE_LOG_DIR" \
+		/var/www/html \
+	; do \
+		rm -rvf "$dir" \
+		&& mkdir -p "$dir" \
+		&& chown -R "$APACHE_RUN_USER:$APACHE_RUN_GROUP" "$dir"; \
+	done
+
+# Apache + PHP requires preforking Apache for best results
+RUN a2dismod mpm_event && a2enmod mpm_prefork
+
+# logs should go to stdout / stderr
+RUN set -ex \
+	&& . "$APACHE_ENVVARS" \
+	&& ln -sfT /dev/stderr "$APACHE_LOG_DIR/error.log" \
+	&& ln -sfT /dev/stdout "$APACHE_LOG_DIR/access.log" \
+	&& ln -sfT /dev/stdout "$APACHE_LOG_DIR/other_vhosts_access.log"
+
+# PHP files should be handled by PHP, and should be preferred over any other file type
 RUN { \
-    echo 'opcache.memory_consumption=128'; \
-    echo 'opcache.interned_strings_buffer=8'; \
-    echo 'opcache.max_accelerated_files=4000'; \
-    echo 'opcache.revalidate_freq=60'; \
-    echo 'opcache.fast_shutdown=1'; \
-    echo 'opcache.enable_cli=1'; \
-  } > /usr/local/etc/php/conf.d/opcache-recommended.ini
-
-# PECL extensions
-RUN pecl install redis-3.1.0 \
-    && pecl install xdebug-2.5.0 \
-    && docker-php-ext-enable redis xdebug
-
-
-RUN git clone -b php7 https://github.com/php-memcached-dev/php-memcached \
-    && cd php-memcached \
-    && phpize \
-    && ./configure \
-    && make \
-    && make install \
-    && cd .. \
-    && rm -rf  php-memcached \
-    && docker-php-ext-enable memcached
+		echo '<FilesMatch \.php$>'; \
+		echo '\tSetHandler application/x-httpd-php'; \
+		echo '</FilesMatch>'; \
+		echo; \
+		echo 'DirectoryIndex disabled'; \
+		echo 'DirectoryIndex index.php index.html'; \
+		echo; \
+		echo '<Directory /var/www/>'; \
+		echo '\tOptions -Indexes'; \
+		echo '\tAllowOverride All'; \
+		echo '</Directory>'; \
+	} | tee "$APACHE_CONFDIR/conf-available/nextcloud-php.conf" \
+	&& a2enconf nextcloud-php
 
 
-# https://docs.nextcloud.com/server/9/admin_manual/installation/source_installation.html
-RUN docker-php-ext-configure gd --with-png-dir=/usr --with-jpeg-dir=/usr
-RUN docker-php-ext-configure ldap --with-libdir=lib/x86_64-linux-gnu
-RUN docker-php-ext-install gd exif intl mbstring mcrypt ldap mysqli opcache pdo_mysql pdo_pgsql pgsql zip
 ENV NEXTCLOUD_VERSION 11.0.0
+
 VOLUME /var/www/html
 
 RUN curl -fsSL -o nextcloud.tar.bz2 \
@@ -65,6 +105,12 @@ RUN curl -fsSL -o nextcloud.tar.bz2 \
 
 COPY docker-entrypoint.sh /entrypoint.sh
 COPY setup.sh /usr/local/bin/setup.sh
+COPY occ /usr/local/bin/occ
+COPY fix-permissions.sh /usr/local/bin/fix-permissions.sh
+COPY apache2-foreground /usr/local/bin/
 
+EXPOSE 80
+
+WORKDIR /var/www/html
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["apache2-foreground"]

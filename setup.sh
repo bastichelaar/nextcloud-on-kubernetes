@@ -1,97 +1,31 @@
 #!/bin/bash
-# Nextcloud
-##########################
 
-#source setup/functions.sh # load our functions
-#source /etc/mailinabox.conf # load global vars
-CONFIGFILE=/var/www/html/config/config.php
+# Exit on failure
+set -e
 
-# Create an initial configuration file.
-instanceid=oc$(echo $PRIMARY_HOSTNAME | sha1sum | fold -w 10 | head -n 1)
-cat > $CONFIGFILE <<EOF;
-<?php
-\$CONFIG = array (
-  'datadirectory' => '/var/www/html/data',
-  "apps_paths" => array (
-      0 => array (
-              "path"     => "/var/www/html/apps",
-              "url"      => "/apps",
-              "writable" => false,
-      ),
-      1 => array (
-              "path"     => "/var/www/html/apps2",
-              "url"      => "/apps2",
-              "writable" => true,
-      ),
-  ),
-  'instanceid' => '$instanceid',
-);
-?>
-EOF
+# Install Nextcloud
+occ maintenance:install \
+        --database=$DB_TYPE \
+        --database-name=$DB_NAME \
+        --database-host=$DB_HOST \
+        --database-port=$DB_PORT \
+        --database-user=$DB_USER \
+        --database-pass=$DB_PASSWORD \
+        --admin-user=$ADMIN_USER \
+        --admin-pass=$ADMIN_PASSWORD \
+        --no-interaction
 
-# Create an auto-configuration file to fill in database settings
-# when the install script is run. Make an administrator account
-# here or else the install can't finish.
-adminpassword=$(dd if=/dev/urandom bs=1 count=40 2>/dev/null | sha1sum | fold -w 30 | head -n 1)
-cat > /var/www/html/config/autoconfig.php <<EOF;
-<?php
-\$AUTOCONFIG = array (
-  # storage/database
-  'directory'     => '/var/www/html/data',
-  'dbtype'        => '${DB_TYPE:-sqlite3}',
-  'dbname'        => '${DB_NAME:-nextcloud}',
-  'dbuser'        => '${DB_USER:-nextcloud}',
-  'dbpassword'    => '${DB_PASSWORD:-password}',
-  'dbhost'        => '${DB_HOST:-nextcloud-db}',
-  'dbtableprefix' => 'oc_',
-EOF
+# Disable firstrun
+occ app:disable firstrunwizard
 
-if [[ ! -z "$ADMIN_USER"  ]]; then
-  cat >> /var/www/html/config/autoconfig.php <<EOF;
-  # create an administrator account with a random password so that
-  # the user does not have to enter anything on first load of ownCloud
-  'adminlogin'    => '${ADMIN_USER}',
-  'adminpass'     => '${ADMIN_PASSWORD}',
-EOF
-fi
-cat >> /var/www/html/config/autoconfig.php <<EOF;
-);
-?>
-EOF
+# Set the correct values
+occ config:system:set trusted_domains 1 --value 192.168.99.100:30158
+occ config:system:set overwrite.cli.url --value http://192.168.99.100:30158
 
-echo "Starting automatic configuration..."
-# Execute ownCloud's setup step, which creates the ownCloud database.
-# It also wipes it if it exists. And it updates config.php with database
-# settings and deletes the autoconfig.php file.
-(cd /var/www/html; php index.php)
-echo "Automatic configuration finished."
+# Add Redis caching
+occ config:system:set memcache.local --value "\OC\Memcache\Redis"
+occ config:system:set redis host --value localhost
+occ config:system:set redis port --value 6379
 
-# Update config.php.
-# * trusted_domains is reset to localhost by autoconfig starting with ownCloud 8.1.1,
-#   so set it here. It also can change if the box's PRIMARY_HOSTNAME changes, so
-#   this will make sure it has the right value.
-# * Some settings weren't included in previous versions of Mail-in-a-Box.
-# * We need to set the timezone to the system timezone to allow fail2ban to ban
-#   users within the proper timeframe
-# * We need to set the logdateformat to something that will work correctly with fail2ban
-# Use PHP to read the settings file, modify it, and write out the new settings array.
-
-CONFIG_TEMP=$(/bin/mktemp)
-php <<EOF > $CONFIG_TEMP && mv $CONFIG_TEMP $CONFIGFILE
-<?php
-include("/var/www/html/config/config.php");
-\$CONFIG['mail_from_address'] = 'administrator';
-\$CONFIG['logtimezone'] = '$TZ';
-\$CONFIG['logdateformat'] = 'Y-m-d H:i:s';
-echo "<?php\n\\\$CONFIG = ";
-var_export(\$CONFIG);
-echo ";";
-?>
-EOF
-
-# Enable/disable apps. Note that this must be done after the ownCloud setup.
-# The firstrunwizard gave Josh all sorts of problems, so disabling that.
-# user_external is what allows ownCloud to use IMAP for login. The contacts
-# and calendar apps are the extensions we really care about here.
-chmod +x /var/www/html/occ
-#/var/www/html/occ app:disable firstrunwizard
+# Enable webcron
+occ background:webcron
