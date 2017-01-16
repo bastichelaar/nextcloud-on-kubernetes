@@ -19,8 +19,9 @@ occ maintenance:install \
 occ app:disable firstrunwizard
 
 # Set the correct values
-occ config:system:set trusted_domains 1 --value 192.168.99.100:30158
-occ config:system:set overwrite.cli.url --value http://192.168.99.100:30158
+occ config:system:set trusted_domains 1 --value $TRUSTED_DOMAINS
+occ config:system:set overwrite.cli.url --value $NEXTCLOUD_URL
+occ config:system:set logtimezone --value $TIMEZONE
 
 # Add Redis caching
 occ config:system:set memcache.local --value "\OC\Memcache\Redis"

@@ -5,17 +5,18 @@ metadata:
   labels:
     name: nextcloud
 spec:
+  strategy:
+    type: Recreate
   containers:
     - name: nextcloud
       image: bastichelaar/nextcloud:11
       env:
-        - name: TZ
+        - name: TIMEZONE
           value: Europe/Amsterdam
-        - name: DEBUG
-          value: "false"
-
         - name: NEXTCLOUD_URL
-          value: http://cloud.example.com
+          value: http://192.168.99.100:30158
+        - name: TRUSTED_DOMAIN
+          value: 192.168.99.100:30158
 
         - name: NEXTCLOUD_ADMIN_USER
           value: admin
@@ -53,8 +54,8 @@ spec:
       livenessProbe:
         tcpSocket:
           port: 80
-        initialDelaySeconds: 5
-        timeoutSeconds: 1
+        initialDelaySeconds: 60
+        timeoutSeconds: 10
     - name: mariadb
       image: mariadb
       env:
@@ -73,12 +74,21 @@ spec:
         - name: mariadb
           containerPort: 3306
           protocol: TCP
+      livenessProbe:
+        tcpSocket:
+          port: 3306
+        initialDelaySeconds: 60
+        timeoutSeconds: 1
     - name: redis
       image: redis
       ports:
         - name: redis
           containerPort: 6379
           protocol: TCP
+      livenessProbe:
+        tcpSocket:
+          port: 6379
+        initialDelaySeconds: 60
     - name: cron
       image: bastichelaar/cron:latest
       env:
